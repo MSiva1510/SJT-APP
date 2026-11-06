@@ -1,13 +1,12 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// app_config.dart — non-Supabase endpoints the app calls.
+// app_config.dart — serverless API endpoints the app calls.
 // Override at build time: --dart-define=WEB_BASE_URL=https://staging.example
 // ─────────────────────────────────────────────────────────────────────────────
 
 class AppConfig {
   AppConfig._();
 
-  /// The web ERP (Netlify): serves the /api/* functions, e.g.
-  /// POST /api/whatsapp/send.
+  /// Netlify API host, e.g. POST /api/whatsapp/send.
   static const String webBaseUrl = String.fromEnvironment(
     'WEB_BASE_URL',
     defaultValue: 'https://sri-jayam-travels.netlify.app',

@@ -1,23 +1,13 @@
-# UI Design and Development Standards
-
-## Design references
-- Use https://ui.shadcn.com/ for React components and interface patterns.
-- Use https://developer.apple.com/design/human-interface-guidelines/ for visual hierarchy, spacing, typography, and interaction principles.
-- Use https://mobbin.com/ and https://dribbble.com/ for inspiration when relevant and accessible.
+# Flutter Mobile UI and Development Standards
 
 ## Before implementing a UI
-1. Inspect the existing application and identify its framework and UI component system.
-2. Retrieve relevant reference pages using webfetch or available web search tools.
-3. Inspect attached screenshots whenever provided and the selected model supports image input.
-4. Identify the design patterns that fit the existing application.
-5. Preserve working features, business logic, database integrations, and routes.
+1. Inspect the existing Flutter screen, shared widgets, theme, and navigation.
+2. Preserve existing behavior, business logic, Supabase integrations, and routes.
+3. Use platform conventions and the existing design system; avoid duplicating UI.
 
 ## Quality requirements
-- Create a polished, consistent, responsive interface.
-- Support dark and light themes where appropriate.
-- Use consistent spacing, typography, colors, buttons, forms, tables, dialogs, and charts.
+- Keep layouts usable on supported Android and iOS screen sizes.
+- Preserve light and dark theme behavior where it exists.
 - Include loading, empty, error, and success states.
 - Avoid unnecessary dependencies and duplicated components.
-- Test changes and report any unresolved issues honestly.
-
-Do not claim to have inspected a website or image unless you actually accessed it.
+- Run relevant Flutter analysis and tests, and report unresolved issues honestly.

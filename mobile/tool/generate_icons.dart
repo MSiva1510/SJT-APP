@@ -1,8 +1,6 @@
 // Regenerate platform launcher icons from tool/assets/app_icon.png.
 // Run with: dart run tool/generate_icons.dart (from mobile/).
 import 'dart:io';
-import 'dart:typed_data';
-
 import 'package:image/image.dart' as img;
 
 const _sourcePath = 'tool/assets/app_icon.png';
@@ -67,25 +65,6 @@ void _savePng(String path, img.Image image) {
 
 void _saveIcon(String path, int size) => _savePng(path, _resize(size));
 
-void _saveWindowsIcon() {
-  final png = Uint8List.fromList(img.encodePng(_resize(256)));
-  final header = ByteData(22)
-    ..setUint16(0, 0, Endian.little)
-    ..setUint16(2, 1, Endian.little)
-    ..setUint16(4, 1, Endian.little)
-    ..setUint8(6, 0)
-    ..setUint8(7, 0)
-    ..setUint8(8, 0)
-    ..setUint8(9, 0)
-    ..setUint16(10, 1, Endian.little)
-    ..setUint16(12, 32, Endian.little)
-    ..setUint32(14, png.length, Endian.little)
-    ..setUint32(18, 22, Endian.little);
-  final file = File('windows/runner/resources/app_icon.ico');
-  file.writeAsBytesSync([...header.buffer.asUint8List(), ...png]);
-  stdout.writeln(file.path);
-}
-
 void main() {
   const androidDensities = {
     'mdpi': 48,
@@ -125,26 +104,5 @@ void main() {
     _saveIcon('$iosDir/${entry.key}', entry.value);
   }
 
-  const macIcons = {
-    'app_icon_16.png': 16,
-    'app_icon_32.png': 32,
-    'app_icon_64.png': 64,
-    'app_icon_128.png': 128,
-    'app_icon_256.png': 256,
-    'app_icon_512.png': 512,
-    'app_icon_1024.png': 1024,
-  };
-  const macDir = 'macos/Runner/Assets.xcassets/AppIcon.appiconset';
-  for (final entry in macIcons.entries) {
-    _saveIcon('$macDir/${entry.key}', entry.value);
-  }
-
-  _saveIcon('web/favicon.png', 64);
-  _saveIcon('web/icons/Icon-192.png', 192);
-  _saveIcon('web/icons/Icon-512.png', 512);
-  _saveIcon('web/icons/Icon-maskable-192.png', 192);
-  _saveIcon('web/icons/Icon-maskable-512.png', 512);
-  _saveWindowsIcon();
-
-  stdout.writeln('Generated Android, iOS, macOS, web, and Windows icons.');
+  stdout.writeln('Generated Android and iOS icons.');
 }
