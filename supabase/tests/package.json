@@ -1,0 +1,11 @@
+{
+  "name": "sri-jayam-supabase-tests",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node driver_alerts.test.mjs"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "0.2.17"
+  }
+}

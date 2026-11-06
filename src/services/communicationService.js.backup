@@ -1,0 +1,273 @@
+// ─── Communication Service ───────────────────────────────────
+// The service layer that pages and contexts call.
+// Routes through CommunicationEngine → Adapters → Logs.
+// Also provides backward-compatible in-app notification helpers.
+
+import { communicationEngine, CHANNELS, RECIPIENT_TYPE, sendCommunication } from '../communication/CommunicationEngine'
+import { publish, EVENTS }       from '../communication/EventBus'
+import { scheduler }             from '../communication/Scheduler'
+import { whatsapp, WA_TEMPLATES } from '../communication/adapters/WhatsAppAdapter'
+import {
+  communicationLogRepository,
+  notificationPreferenceRepository,
+  providerRepository,
+} from '../repositories/communicationRepository'
+
+// ── Re-export core ────────────────────────────────────────────
+export { CHANNELS, RECIPIENT_TYPE }
+export { publish, EVENTS }
+export { scheduler }
+export { whatsapp, WA_TEMPLATES }
+
+// ── Booking communications ────────────────────────────────────
+export async function notifyBookingCreated(booking, channels = [CHANNELS.IN_APP]) {
+  publish(EVENTS.BOOKING_CREATED, { bookingId: booking.id, bookingNo: booking.bookingNo, customer: booking.customer })
+  return sendCommunication({
+    eventType:    EVENTS.BOOKING_CREATED,
+    channels,
+    recipient:    { id: booking.customerId, type: RECIPIENT_TYPE.CUSTOMER, name: booking.customer, contact: booking.contact },
+    subject:      'Booking Confirmed',
+    body:         WA_TEMPLATES.BOOKING_CONFIRMATION.build(booking).body,
+    relatedEntity:{ type:'booking', id: booking.id },
+    metadata:     { bookingNo: booking.bookingNo },
+  })
+}
+
+export async function notifyBookingPending(booking, adminUserId) {
+  publish(EVENTS.BOOKING_PENDING, { bookingId: booking.id, bookingNo: booking.bookingNo })
+  return sendCommunication({
+    eventType:    EVENTS.BOOKING_PENDING,
+    channels:     [CHANNELS.IN_APP],
+    recipient:    { id: adminUserId, type: RECIPIENT_TYPE.ADMIN },
+    subject:      `Booking Pending Approval: ${booking.bookingNo}`,
+    body:         `${booking.customer} submitted booking ${booking.bookingNo} for approval.`,
+    relatedEntity:{ type:'booking', id: booking.id },
+  })
+}
+
+export async function notifyBookingApproved(booking, channels = [CHANNELS.IN_APP]) {
+  publish(EVENTS.BOOKING_APPROVED, { bookingId: booking.id, bookingNo: booking.bookingNo })
+  return sendCommunication({
+    eventType:    EVENTS.BOOKING_APPROVED,
+    channels,
+    recipient:    { id: booking.customerId, type: RECIPIENT_TYPE.CUSTOMER, name: booking.customer, contact: booking.contact },
+    subject:      `Booking Approved: ${booking.bookingNo}`,
+    body:         `Your booking ${booking.bookingNo} has been approved.`,
+    relatedEntity:{ type:'booking', id: booking.id },
+  })
+}
+
+export async function notifyBookingCancelled(booking, channels = [CHANNELS.IN_APP]) {
+  publish(EVENTS.BOOKING_CANCELLED, { bookingId: booking.id })
+  const body = WA_TEMPLATES.BOOKING_CANCELLED.build(booking).body
+  return sendCommunication({
+    eventType:    EVENTS.BOOKING_CANCELLED,
+    channels,
+    recipient:    { id: booking.customerId, type: RECIPIENT_TYPE.CUSTOMER, name: booking.customer, contact: booking.contact },
+    subject:      `Booking Cancelled: ${booking.bookingNo}`,
+    body,
+    priority:     'high',
+    relatedEntity:{ type:'booking', id: booking.id },
+  })
+}
+
+// ── Trip communications ───────────────────────────────────────
+export async function notifyTripAssigned(booking, driver, channels = [CHANNELS.IN_APP]) {
+  publish(EVENTS.TRIP_ASSIGNED, { bookingId: booking.id, driverName: driver.name })
+  const customerMsg = WA_TEMPLATES.DRIVER_ASSIGNED.build({
+    bookingNo:    booking.bookingNo,
+    driverName:   driver.name,
+    driverMobile: driver.mobile,
+    vehicleReg:   booking.vehicle,
+  }).body
+  const driverMsg = WA_TEMPLATES.DRIVER_TRIP_ASSIGNMENT.build(booking).body
+
+  return Promise.all([
+    // Notify customer
+    sendCommunication({
+      eventType:    EVENTS.TRIP_ASSIGNED,
+      channels,
+      recipient:    { id: booking.customerId, type: RECIPIENT_TYPE.CUSTOMER, name: booking.customer, contact: booking.contact },
+      subject:      'Driver Assigned',
+      body:         customerMsg,
+      relatedEntity:{ type:'booking', id: booking.id },
+    }),
+    // Notify driver
+    sendCommunication({
+      eventType:    EVENTS.DRIVER_ASSIGNED,
+      channels:     [CHANNELS.IN_APP],
+      recipient:    { id: driver.id, type: RECIPIENT_TYPE.DRIVER, name: driver.name, contact: driver.mobile },
+      subject:      `New Trip: ${booking.bookingNo}`,
+      body:         driverMsg,
+      relatedEntity:{ type:'booking', id: booking.id },
+    }),
+  ])
+}
+
+export async function notifyTripStarted(booking, channels = [CHANNELS.IN_APP]) {
+  publish(EVENTS.TRIP_STARTED, { bookingId: booking.id })
+  return sendCommunication({
+    eventType:    EVENTS.TRIP_STARTED,
+    channels,
+    recipient:    { id: booking.customerId, type: RECIPIENT_TYPE.CUSTOMER, name: booking.customer, contact: booking.contact },
+    subject:      'Trip Started',
+    body:         WA_TEMPLATES.TRIP_STARTED.build(booking).body,
+    relatedEntity:{ type:'booking', id: booking.id },
+  })
+}
+
+export async function notifyTripCompleted(booking, channels = [CHANNELS.IN_APP]) {
+  publish(EVENTS.TRIP_COMPLETED, { bookingId: booking.id })
+  return sendCommunication({
+    eventType:    EVENTS.TRIP_COMPLETED,
+    channels,
+    recipient:    { id: booking.customerId, type: RECIPIENT_TYPE.CUSTOMER, name: booking.customer, contact: booking.contact },
+    subject:      'Trip Completed',
+    body:         WA_TEMPLATES.TRIP_COMPLETED.build(booking).body,
+    relatedEntity:{ type:'booking', id: booking.id },
+  })
+}
+
+// ── Expense ───────────────────────────────────────────────────
+export async function notifyExpenseAdded(expense, adminUserId) {
+  publish(EVENTS.EXPENSE_ADDED, { expenseId: expense.id, amount: expense.amount })
+  return sendCommunication({
+    eventType:    EVENTS.EXPENSE_ADDED,
+    channels:     [CHANNELS.IN_APP],
+    recipient:    { id: adminUserId, type: RECIPIENT_TYPE.ADMIN },
+    subject:      'Expense Added',
+    body:         `${expense.driver || 'Driver'} added expense: Rs. ${Number(expense.amount||0).toLocaleString('en-IN')} (${expense.type||'—'})`,
+    relatedEntity:{ type:'expense', id: expense.id },
+  })
+}
+
+export async function notifyExpenseApproved(expense, driverId) {
+  publish(EVENTS.EXPENSE_APPROVED, { expenseId: expense.id })
+  return sendCommunication({
+    eventType:    EVENTS.EXPENSE_APPROVED,
+    channels:     [CHANNELS.IN_APP],
+    recipient:    { id: driverId, type: RECIPIENT_TYPE.DRIVER },
+    subject:      'Expense Approved',
+    body:         `Your expense of Rs. ${Number(expense.amount||0).toLocaleString('en-IN')} has been approved.`,
+    relatedEntity:{ type:'expense', id: expense.id },
+  })
+}
+
+// ── Payroll ───────────────────────────────────────────────────
+export async function notifyPayrollGenerated(settlement, channels = [CHANNELS.IN_APP]) {
+  publish(EVENTS.PAYROLL_GENERATED, { settlementId: settlement.id, driverName: settlement.driver })
+  const body = WA_TEMPLATES.SALARY_PROCESSED.build({
+    driverName: settlement.driver,
+    netAmount:  settlement.netAmount,
+    period:     `${settlement.month}/${settlement.year}`,
+  }).body
+  return sendCommunication({
+    eventType:    EVENTS.PAYROLL_GENERATED,
+    channels,
+    recipient:    { id: settlement.driverId, type: RECIPIENT_TYPE.DRIVER, name: settlement.driver, contact: settlement.driverMobile },
+    subject:      'Salary Processed',
+    body,
+    relatedEntity:{ type:'settlement', id: settlement.id },
+  })
+}
+
+// ── Document expiry ───────────────────────────────────────────
+export async function notifyDocumentExpiry(doc, adminUserId, daysLeft) {
+  publish(EVENTS.DOCUMENT_EXPIRY, { docId: doc.id, daysLeft })
+  const body = WA_TEMPLATES.DOCUMENT_EXPIRY_REMINDER.build({
+    docType:    doc.doc_type || doc.title,
+    entityName: doc.entity_name || '—',
+    expiryDate: doc.expiry_date,
+  }).body
+  scheduler.scheduleExpiryReminders(doc.id, doc.category, doc.doc_type, doc.expiry_date)
+  return sendCommunication({
+    eventType:    EVENTS.DOCUMENT_EXPIRY,
+    channels:     [CHANNELS.IN_APP],
+    recipient:    { id: adminUserId, type: RECIPIENT_TYPE.ADMIN },
+    subject:      `Document Expiry: ${daysLeft}d left`,
+    body,
+    priority:     daysLeft <= 7 ? 'high' : 'medium',
+    relatedEntity:{ type:'document', id: doc.id },
+  })
+}
+
+// ── Attendance ────────────────────────────────────────────────
+export async function notifyAttendanceMissing(driverName, date, adminUserId) {
+  publish(EVENTS.ATTENDANCE_MISSING, { driverName, date })
+  return sendCommunication({
+    eventType:    EVENTS.ATTENDANCE_MISSING,
+    channels:     [CHANNELS.IN_APP],
+    recipient:    { id: adminUserId, type: RECIPIENT_TYPE.ADMIN },
+    subject:      'Attendance Missing',
+    body:         `${driverName} has not marked attendance for ${date}.`,
+  })
+}
+
+// ── Invoice ───────────────────────────────────────────────────
+export async function notifyInvoiceGenerated(invoice, channels = [CHANNELS.IN_APP]) {
+  publish(EVENTS.INVOICE_GENERATED, { invoiceId: invoice.id, invoiceNo: invoice.invoiceNo })
+  return sendCommunication({
+    eventType:    EVENTS.INVOICE_GENERATED,
+    channels,
+    recipient:    { id: invoice.customerId, type: RECIPIENT_TYPE.CUSTOMER, name: invoice.customerName, contact: invoice.customerContact },
+    subject:      `Invoice: ${invoice.invoiceNo}`,
+    body:         WA_TEMPLATES.INVOICE_GENERATED.build({ invoiceNo: invoice.invoiceNo, amount: invoice.total, dueDate: invoice.dueDate }).body,
+    relatedEntity:{ type:'invoice', id: invoice.id },
+  })
+}
+
+// ── WhatsApp deep-link helpers (no API required) ─────────────
+export function openWhatsApp(phone, message) {
+  return whatsapp.openChat(phone, message)
+}
+
+export function whatsAppLink(phone, message) {
+  return whatsapp.deepLink(phone, message)
+}
+
+// ── User preferences ──────────────────────────────────────────
+export async function getNotificationPreferences(userId) {
+  return notificationPreferenceRepository.get(userId)
+}
+
+export async function saveNotificationPreferences(userId, prefs) {
+  await communicationEngine.savePreferences(userId, prefs)
+  return notificationPreferenceRepository.upsert(userId, prefs)
+}
+
+// ── Communication logs ────────────────────────────────────────
+export async function getCommunicationLogs(filters = {}) {
+  return communicationLogRepository.getAll(filters)
+}
+
+export async function getCommunicationStats() {
+  return communicationLogRepository.getStats()
+}
+
+// ── Provider info ─────────────────────────────────────────────
+export async function getProviders() {
+  return providerRepository.getAll()
+}
+
+export async function getActiveProviders() {
+  return providerRepository.getActive()
+}
+
+// ── Engine stats ──────────────────────────────────────────────
+export function getEngineStats() {
+  return {
+    engine:  communicationEngine.getStats(),
+    adapters: {
+      whatsapp: whatsapp.providerInfo(),
+    },
+  }
+}
+
+// ── Scheduled notifications ───────────────────────────────────
+export function scheduleTripReminder(bookingId, startDate, payload) {
+  scheduler.scheduleTripReminder(bookingId, startDate, payload)
+}
+
+export function getScheduledJobs() {
+  return scheduler.getJobs()
+}
